@@ -66,7 +66,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String ANDROID_CERT_HEADER = "X-Android-Cert";
     private static final String ANDROID_PACKAGE_HEADER = "X-Android-Package";
     private static final int MAX_LABEL_RESULTS = 10;
-    private static final int MAX_DIMENSION = 1200;
+    private static final int MAX_DIMENSION = 3000;
 
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final int GALLERY_PERMISSIONS_REQUEST = 0;
@@ -85,8 +85,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        Toolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
 
         tts = new TTS(getApplicationContext());
 
@@ -196,13 +194,8 @@ public class MainActivity extends AppCompatActivity {
         if (uri != null) {
             try {
                 // scale the image to save on bandwidth
-                Bitmap bitmap =
-                        scaleBitmapDown(
-                                MediaStore.Images.Media.getBitmap(getContentResolver(), uri),
-                                MAX_DIMENSION);
-
-                bitmap = flipIMage(bitmap);
-
+                Bitmap bitmap = flipImage(MediaStore.Images.Media.getBitmap(getContentResolver(), uri));
+                bitmap = scaleBitmapDown( bitmap, MAX_DIMENSION);
                 callCloudVision(bitmap);
                 mMainImage.setImageBitmap(bitmap);
 
@@ -223,7 +216,7 @@ public class MainActivity extends AppCompatActivity {
         return 0;
     }
 
-    public static Bitmap flipIMage(Bitmap bitmap) {
+    public static Bitmap flipImage(Bitmap bitmap) {
         Matrix matrix = new Matrix();
         int rotation = fixOrientation(bitmap);
         matrix.postRotate(rotation);
@@ -356,6 +349,9 @@ public class MainActivity extends AppCompatActivity {
 
         int originalWidth = bitmap.getWidth();
         int originalHeight = bitmap.getHeight();
+        Log.i("Width", Integer.toString(originalWidth));
+        Log.i("Height", Integer.toString(originalHeight));
+
         int resizedWidth = maxDimension;
         int resizedHeight = maxDimension;
 
