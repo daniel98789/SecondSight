@@ -19,6 +19,7 @@ package com.google.sample.cloudvision;
 import android.Manifest;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Matrix;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -65,7 +66,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String ANDROID_CERT_HEADER = "X-Android-Cert";
     private static final String ANDROID_PACKAGE_HEADER = "X-Android-Package";
     private static final int MAX_LABEL_RESULTS = 10;
-    private static final int MAX_DIMENSION = 1200;
+    private static final int MAX_DIMENSION = 3000;
 
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final int GALLERY_PERMISSIONS_REQUEST = 0;
@@ -76,12 +77,16 @@ public class MainActivity extends AppCompatActivity {
     private TextView mImageDetails;
     private ImageView mMainImage;
 
+    private static TTS tts;
+
+    private DescriptionListener descriptionListener;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        Toolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
+
+        tts = new TTS(getApplicationContext());
 
         /*
         FloatingActionButton fab = findViewById(R.id.fab);
@@ -98,6 +103,32 @@ public class MainActivity extends AppCompatActivity {
 
         mImageDetails = findViewById(R.id.image_details);
         mMainImage = findViewById(R.id.main_image);
+
+        mMainImage.setOnTouchListener(new OnSwipeTouchListener(MainActivity.this) {
+            public void onSwipeTop() {
+                startCamera();
+                Toast.makeText(MainActivity.this, "cancel", Toast.LENGTH_SHORT).show();
+            }
+            public void onSwipeRight() {
+                startCamera();
+                Toast.makeText(MainActivity.this, "accept", Toast.LENGTH_SHORT).show();
+            }
+            public void onSwipeLeft() {
+                try
+                {
+                    descriptionListener = new DescriptionListener();
+                    descriptionListener.execute();
+                    Log.d("Async", descriptionListener.get());
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                Toast.makeText(MainActivity.this, "reject", Toast.LENGTH_SHORT).show();
+            }
+            public void onSwipeBottom() {
+                startCamera();
+                Toast.makeText(MainActivity.this, "cancel", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     public void startGalleryChooser() {
@@ -163,11 +194,8 @@ public class MainActivity extends AppCompatActivity {
         if (uri != null) {
             try {
                 // scale the image to save on bandwidth
-                Bitmap bitmap =
-                        scaleBitmapDown(
-                                MediaStore.Images.Media.getBitmap(getContentResolver(), uri),
-                                MAX_DIMENSION);
-
+                Bitmap bitmap = flipImage(MediaStore.Images.Media.getBitmap(getContentResolver(), uri));
+                bitmap = scaleBitmapDown( bitmap, MAX_DIMENSION);
                 callCloudVision(bitmap);
                 mMainImage.setImageBitmap(bitmap);
 
@@ -179,6 +207,20 @@ public class MainActivity extends AppCompatActivity {
             Log.d(TAG, "Image picker gave us a null image.");
             Toast.makeText(this, R.string.image_picker_error, Toast.LENGTH_LONG).show();
         }
+    }
+
+    private static int fixOrientation(Bitmap bitmap) {
+        if (bitmap.getWidth() > bitmap.getHeight()) {
+            return 90;
+        }
+        return 0;
+    }
+
+    public static Bitmap flipImage(Bitmap bitmap) {
+        Matrix matrix = new Matrix();
+        int rotation = fixOrientation(bitmap);
+        matrix.postRotate(rotation);
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
     }
 
     private Vision.Images.Annotate prepareAnnotationRequest(Bitmap bitmap) throws IOException {
@@ -248,7 +290,7 @@ public class MainActivity extends AppCompatActivity {
         return annotateRequest;
     }
 
-    private static class LableDetectionTask extends AsyncTask<Object, Void, String> {
+    private class LableDetectionTask extends AsyncTask<Object, String, String> {
         private final WeakReference<MainActivity> mActivityWeakReference;
         private Vision.Images.Annotate mRequest;
 
@@ -262,7 +304,9 @@ public class MainActivity extends AppCompatActivity {
             try {
                 Log.d(TAG, "created Cloud Vision request object, sending request");
                 BatchAnnotateImagesResponse response = mRequest.execute();
-                return convertResponseToString(response);
+                String result = convertResponseToString(response);
+                publishProgress(result);
+                return result;
 
             } catch (GoogleJsonResponseException e) {
                 Log.d(TAG, "failed to make API request because " + e.getContent());
@@ -278,8 +322,12 @@ public class MainActivity extends AppCompatActivity {
             if (activity != null && !activity.isFinishing()) {
                 TextView imageDetail = activity.findViewById(R.id.image_details);
                 imageDetail.setText(result);
-                Log.i("Output",result);
             }
+        }
+
+        protected void onProgressUpdate(String ... text) {
+            String result = processResult(text[0]);
+            tts.speak(result);
         }
     }
 
@@ -289,7 +337,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Do the real work in an async task, because we need to use the network anyway
         try {
-            AsyncTask<Object, Void, String> labelDetectionTask = new LableDetectionTask(this, prepareAnnotationRequest(bitmap));
+            AsyncTask<Object, String, String> labelDetectionTask = new LableDetectionTask(this, prepareAnnotationRequest(bitmap));
             labelDetectionTask.execute();
         } catch (IOException e) {
             Log.d(TAG, "failed to make API request because of other IOException " +
@@ -301,6 +349,9 @@ public class MainActivity extends AppCompatActivity {
 
         int originalWidth = bitmap.getWidth();
         int originalHeight = bitmap.getHeight();
+        Log.i("Width", Integer.toString(originalWidth));
+        Log.i("Height", Integer.toString(originalHeight));
+
         int resizedWidth = maxDimension;
         int resizedHeight = maxDimension;
 
@@ -331,5 +382,9 @@ public class MainActivity extends AppCompatActivity {
         }
 
         return message.toString();
+    }
+
+    private String processResult(String result) {
+        return result.replaceAll("[0-9]","");
     }
 }
